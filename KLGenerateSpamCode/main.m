@@ -857,7 +857,10 @@ void modifyFilesClassName(NSString *sourceCodeDir, NSString *oldClassName, NSStr
         }
         
         NSString *fileName = filePath.lastPathComponent;
-        if ([fileName hasSuffix:@".h"] || [fileName hasSuffix:@".m"] || [fileName hasSuffix:@".pch"] || [fileName hasSuffix:@".swift"] || [fileName hasSuffix:@".xib"] || [fileName hasSuffix:@".storyboard"]) {
+        if ([oldClassName isEqual:@"protocol"]) {
+            continue;
+        }
+        if ([fileName hasSuffix:@".h"] || [fileName hasSuffix:@".m"] || [fileName hasSuffix:@".pch"] || [fileName hasSuffix:@".swift"] || [fileName hasSuffix:@".xib"] || [fileName hasSuffix:@".storyboard"] || [fileName hasSuffix:@".mm"]) {
             
             NSError *error = nil;
             NSMutableString *fileContent = [NSMutableString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:&error];
@@ -865,8 +868,7 @@ void modifyFilesClassName(NSString *sourceCodeDir, NSString *oldClassName, NSStr
                 printf("打开文件 %s 失败：%s\n", path.UTF8String, error.localizedDescription.UTF8String);
                 abort();
             }
-            
-            NSString *regularExpression = [NSString stringWithFormat:@"\\b%@\\b", oldClassName];
+            NSString *regularExpression = [NSString stringWithFormat:@"\\b%@(?!\\+)", oldClassName];
             BOOL isChanged = regularReplacement(fileContent, regularExpression, newClassName);
             if (!isChanged) continue;
             error = nil;
@@ -875,6 +877,7 @@ void modifyFilesClassName(NSString *sourceCodeDir, NSString *oldClassName, NSStr
                 printf("保存文件 %s 失败：%s\n", path.UTF8String, error.localizedDescription.UTF8String);
                 abort();
             }
+            
         }
     }
 }
@@ -895,17 +898,26 @@ void modifyClassNamePrefix(NSMutableString *projectContent, NSString *sourceCode
         }
         
         NSString *fileName = filePath.lastPathComponent.stringByDeletingPathExtension;
+        if ([fileName isEqual:@"protocol"]) {
+            continue;
+        }
         NSString *fileExtension = filePath.pathExtension;
         NSString *newClassName;
+        // 修改工程文件中的文件名
+        NSString *regularExpression = [NSString stringWithFormat:@"(?<![+a-zA-Z0-9])%@[.]\\b", fileName];
+        
         if ([fileName hasPrefix:oldName]) {
             newClassName = [newName stringByAppendingString:[fileName substringFromIndex:oldName.length]];
         } else {
             //处理是category的情况。当是category时，修改+号后面的类名前缀
-            NSString *oldNamePlus = [NSString stringWithFormat:@"+%@",oldName];
-            if ([fileName containsString:oldNamePlus]) {
-                NSMutableString *fileNameStr = [[NSMutableString alloc] initWithString:fileName];
-                [fileNameStr replaceCharactersInRange:[fileName rangeOfString:oldNamePlus] withString:[NSString stringWithFormat:@"+%@",newName]];
-                newClassName = fileNameStr;
+//            NSString *oldNamePlus = [NSString stringWithFormat:@"+%@",oldName];
+            if ([fileName containsString:@"+"]) {
+//                NSMutableString *fileNameStr = [[NSMutableString alloc] initWithString:fileName];
+//                [fileNameStr replaceCharactersInRange:[fileName rangeOfString:oldNamePlus] withString:[NSString stringWithFormat:@"+%@",newName]];
+//                newClassName = fileNameStr;
+                newClassName = fileName;
+                NSString *regexFileName = [fileName stringByReplacingOccurrencesOfString:@"+" withString:@"[+]"];
+                regularExpression = [NSString stringWithFormat:@"(?<![+a-zA-Z0-9])%@[.]\\b", regexFileName];
             }else{
                 newClassName = [newName stringByAppendingString:fileName];
             }
@@ -926,7 +938,6 @@ void modifyClassNamePrefix(NSMutableString *projectContent, NSString *sourceCode
                     newFilePath = [[sourceCodeDir stringByAppendingPathComponent:newClassName] stringByAppendingPathExtension:@"xib"];
                     renameFile(oldFilePath, newFilePath);
                 }
-                
                 @autoreleasepool {
                     modifyFilesClassName(gSourceCodeDir, fileName, newClassName);
                 }
@@ -934,6 +945,7 @@ void modifyClassNamePrefix(NSMutableString *projectContent, NSString *sourceCode
                 continue;
             }
         } else if ([fileExtension isEqualToString:@"swift"]) {
+            NSString *oldClassName = fileName.stringByDeletingPathExtension;
             NSString *oldFilePath = [[sourceCodeDir stringByAppendingPathComponent:fileName] stringByAppendingPathExtension:@"swift"];
             NSString *newFilePath = [[sourceCodeDir stringByAppendingPathComponent:newClassName] stringByAppendingPathExtension:@"swift"];
             renameFile(oldFilePath, newFilePath);
@@ -944,14 +956,17 @@ void modifyClassNamePrefix(NSMutableString *projectContent, NSString *sourceCode
             }
             
             @autoreleasepool {
-                modifyFilesClassName(gSourceCodeDir, fileName.stringByDeletingPathExtension, newClassName);
+                modifyFilesClassName(gSourceCodeDir, oldClassName, newClassName);
             }
         } else {
             continue;
         }
         
         // 修改工程文件中的文件名
-        NSString *regularExpression = [NSString stringWithFormat:@"\\b%@\\b", fileName];
+//        NSString *regularExpression = [NSString stringWithFormat:@"\\b%@\\b", fileName];
+        
+        /// 修改工程文件中的文件名， 考虑有文件名与文件夹名相同的情况
+        newClassName = [newClassName stringByAppendingString:@"."];
         regularReplacement(projectContent, regularExpression, newClassName);
     }
 }
